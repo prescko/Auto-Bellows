@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>AutoBellows</AssemblyName>
+    <RootNamespace>AutoBellows</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <ResolveAssemblyReferenceIgnoreTargetFrameworkAttributeVersionMismatch>true</ResolveAssemblyReferenceIgnoreTargetFrameworkAttributeVersionMismatch>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="VintagestoryAPI">
+      <HintPath>D:\Vintagestory\VintagestoryAPI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="VintagestoryLib">
+      <HintPath>D:\Vintagestory\VintagestoryLib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="PackageMod" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <MakeDir Directories="$(ProjectDir)bin\Package" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ProjectDir)bin\Package" />
+    <Copy SourceFiles="$(ProjectDir)modinfo.json" DestinationFolder="$(ProjectDir)bin\Package" />
+    <ZipDirectory SourceDirectory="$(ProjectDir)bin\Package" DestinationFile="$(ProjectDir)bin\AutoBellows.zip" Overwrite="true" />
+  </Target>
+</Project>

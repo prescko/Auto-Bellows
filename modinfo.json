@@ -1,0 +1,12 @@
+{
+  "type": "code",
+  "side": "client",
+  "modid": "autobellows",
+  "name": "Auto Bellows",
+  "description": "Client-side debug mod that repeatedly right-clicks nearby bellows. Toggle with Ctrl+Z.",
+  "authors": [ "Devin" ],
+  "version": "1.0.7",
+  "dependencies": {
+    "game": "1.22.2"
+  }
+}
