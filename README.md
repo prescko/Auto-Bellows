@@ -77,5 +77,5 @@ See the [LICENSE](LICENSE) file for details.
 ---
 
 <p align="center">
-  Made by <b>prescko</b>
+  Made by <b>@prescko</b>
 </p>
