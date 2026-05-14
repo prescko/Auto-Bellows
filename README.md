@@ -1,7 +1,7 @@
 # Auto Bellows
 
 <p align="center">
-  <img src="modicon.png" alt="Auto Bellows Preview" width="700"/>
+  <img src="modicn.png" alt="Auto Bellows Preview" width="700"/>
 </p>
 
 <p align="center">
