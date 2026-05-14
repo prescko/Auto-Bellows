@@ -13,8 +13,12 @@ namespace AutoBellows
     {
         private const string HotkeyCode = "autobellows-toggle";
         private const string PouringHotkeyCode = "autopouring-toggle";
-        private const int ScanRadius = 30;
-        private const int ScanRadiusSquared = ScanRadius * ScanRadius;
+        private const string SettingsHotkeyCode = "autobellows-settings";
+        private const string ConfigFileName = "AutoBellows.json";
+        private const int BellowsScanRadius = 30;
+        private const int BellowsScanRadiusSquared = BellowsScanRadius * BellowsScanRadius;
+        private const int PourScanRadius = 50;
+        private const int PourScanRadiusSquared = PourScanRadius * PourScanRadius;
         private const int PumpIntervalMs = 215;
         private const int ScanIntervalMs = 1000;
         private const int MaxInteractionsPerTick = 256;
@@ -31,6 +35,8 @@ namespace AutoBellows
         private readonly List<BlockPos> bellowsPositions = new List<BlockPos>();
         private readonly List<PourTarget> pourTargets = new List<PourTarget>();
         private ICoreClientAPI? capi;
+        private AutoBellowsSettings settings = new AutoBellowsSettings();
+        private AutoBellowsSettingsDialog? settingsDialog;
         private bool enabled;
         private bool pouringEnabled;
         private long tickListenerId;
@@ -46,6 +52,7 @@ namespace AutoBellows
         public override void StartClientSide(ICoreClientAPI api)
         {
             capi = api;
+            settings = LoadSettings(api);
 
             api.Input.RegisterHotKey(
                 HotkeyCode,
@@ -69,6 +76,19 @@ namespace AutoBellows
             );
             api.Input.SetHotKeyHandler(PouringHotkeyCode, OnTogglePouringKey);
 
+            api.Input.RegisterHotKey(
+                SettingsHotkeyCode,
+                "Auto Bellows Settings",
+                GlKeys.F1,
+                HotkeyType.GUIOrOtherControls,
+                false,
+                false,
+                false
+            );
+            api.Input.SetHotKeyHandler(SettingsHotkeyCode, OnSettingsKey);
+
+            settingsDialog = new AutoBellowsSettingsDialog(api, this);
+
             tickListenerId = api.Event.RegisterGameTickListener(OnClientTick, PumpIntervalMs);
         }
 
@@ -79,10 +99,7 @@ namespace AutoBellows
                 return true;
             }
 
-            enabled = !enabled;
-            bellowsPositions.Clear();
-            nextScanAtMs = 0;
-            ShowChatStatus("Auto Bellows", enabled);
+            SetBellowsEnabled(!enabled);
 
             return true;
         }
@@ -94,13 +111,28 @@ namespace AutoBellows
                 return true;
             }
 
-            pouringEnabled = !pouringEnabled;
-            pourTargets.Clear();
-            nextPourScanAtMs = 0;
-            nextPourActionAtMs = 0;
+            SetPouringEnabled(!pouringEnabled);
 
-            LogPour("Auto Pouring " + (pouringEnabled ? "enabled" : "disabled"));
-            ShowChatStatus("Auto Pouring", pouringEnabled);
+            return true;
+        }
+
+        private bool OnSettingsKey(KeyCombination comb)
+        {
+            if (capi == null)
+            {
+                return true;
+            }
+
+            settingsDialog ??= new AutoBellowsSettingsDialog(capi, this);
+
+            if (settingsDialog.IsOpened())
+            {
+                settingsDialog.TryClose();
+            }
+            else
+            {
+                settingsDialog.TryOpen(true);
+            }
 
             return true;
         }
@@ -142,13 +174,13 @@ namespace AutoBellows
             BlockPos playerPos = capi.World.Player.Entity.Pos.AsBlockPos;
             IBlockAccessor blockAccessor = capi.World.BlockAccessor;
 
-            for (int dx = -ScanRadius; dx <= ScanRadius; dx++)
+            for (int dx = -BellowsScanRadius; dx <= BellowsScanRadius; dx++)
             {
-                for (int dy = -ScanRadius; dy <= ScanRadius; dy++)
+                for (int dy = -BellowsScanRadius; dy <= BellowsScanRadius; dy++)
                 {
-                    for (int dz = -ScanRadius; dz <= ScanRadius; dz++)
+                    for (int dz = -BellowsScanRadius; dz <= BellowsScanRadius; dz++)
                     {
-                        if (dx * dx + dy * dy + dz * dz > ScanRadiusSquared)
+                        if (dx * dx + dy * dy + dz * dz > BellowsScanRadiusSquared)
                         {
                             continue;
                         }
@@ -279,6 +311,12 @@ namespace AutoBellows
                 return;
             }
 
+            if (!settings.AllowIngotMolds && !settings.AllowToolMolds)
+            {
+                LogPour("skipped scan: all pouring target mold types are disabled");
+                return;
+            }
+
             List<PourTarget> candidates = new List<PourTarget>();
             ScanNearbyMolds(source, candidates, out int moldSlots, out int partialSlots, out int emptySlots, out int fullSlots, out int skippedSlots);
 
@@ -338,13 +376,13 @@ namespace AutoBellows
             BlockPos playerPos = capi.World.Player.Entity.Pos.AsBlockPos;
             IBlockAccessor blockAccessor = capi.World.BlockAccessor;
 
-            for (int dx = -ScanRadius; dx <= ScanRadius; dx++)
+            for (int dx = -PourScanRadius; dx <= PourScanRadius; dx++)
             {
-                for (int dy = -ScanRadius; dy <= ScanRadius; dy++)
+                for (int dy = -PourScanRadius; dy <= PourScanRadius; dy++)
                 {
-                    for (int dz = -ScanRadius; dz <= ScanRadius; dz++)
+                    for (int dz = -PourScanRadius; dz <= PourScanRadius; dz++)
                     {
-                        if (dx * dx + dy * dy + dz * dz > ScanRadiusSquared)
+                        if (dx * dx + dy * dy + dz * dz > PourScanRadiusSquared)
                         {
                             continue;
                         }
@@ -364,11 +402,21 @@ namespace AutoBellows
                         BlockEntity blockEntity = blockAccessor.GetBlockEntity(pos);
                         if (blockEntity is BlockEntityToolMold toolMold)
                         {
+                            if (!settings.AllowToolMolds)
+                            {
+                                continue;
+                            }
+
                             moldSlots++;
                             AddToolMoldTarget(pos, toolMold, source, candidates, ref partialSlots, ref emptySlots, ref fullSlots, ref skippedSlots);
                         }
                         else if (blockEntity is BlockEntityIngotMold ingotMold)
                         {
+                            if (!settings.AllowIngotMolds)
+                            {
+                                continue;
+                            }
+
                             AddIngotMoldTargets(pos, ingotMold, source, candidates, ref moldSlots, ref partialSlots, ref emptySlots, ref fullSlots, ref skippedSlots);
                         }
                     }
@@ -599,6 +647,12 @@ namespace AutoBellows
             BlockEntity blockEntity = capi.World.BlockAccessor.GetBlockEntity(target.Position);
             if (blockEntity is BlockEntityToolMold toolMold)
             {
+                if (!settings.AllowToolMolds)
+                {
+                    skipReason = "tool mold target type disabled";
+                    return false;
+                }
+
                 if (!toolMold.CanReceiveAny || toolMold.IsFull || !toolMold.CanReceive(source.MetalStack))
                 {
                     skipReason = "tool mold no longer receivable";
@@ -621,6 +675,12 @@ namespace AutoBellows
 
             if (blockEntity is BlockEntityIngotMold ingotMold && target.IngotRightSide.HasValue)
             {
+                if (!settings.AllowIngotMolds)
+                {
+                    skipReason = "ingot mold target type disabled";
+                    return false;
+                }
+
                 bool rightSide = target.IngotRightSide.Value;
                 bool isFull = rightSide ? ingotMold.IsFullRight : ingotMold.IsFullLeft;
                 ItemStack? contents = rightSide ? ingotMold.ContentsRight : ingotMold.ContentsLeft;
@@ -763,13 +823,13 @@ namespace AutoBellows
             BlockPos playerPos = capi.World.Player.Entity.Pos.AsBlockPos;
             IBlockAccessor blockAccessor = capi.World.BlockAccessor;
 
-            for (int dx = -ScanRadius; dx <= ScanRadius; dx++)
+            for (int dx = -PourScanRadius; dx <= PourScanRadius; dx++)
             {
-                for (int dy = -ScanRadius; dy <= ScanRadius; dy++)
+                for (int dy = -PourScanRadius; dy <= PourScanRadius; dy++)
                 {
-                    for (int dz = -ScanRadius; dz <= ScanRadius; dz++)
+                    for (int dz = -PourScanRadius; dz <= PourScanRadius; dz++)
                     {
-                        if (dx * dx + dy * dy + dz * dz > ScanRadiusSquared)
+                        if (dx * dx + dy * dy + dz * dz > PourScanRadiusSquared)
                         {
                             continue;
                         }
@@ -1001,7 +1061,164 @@ namespace AutoBellows
 
         private void ShowChatStatus(string featureName, bool isEnabled)
         {
-            capi?.ShowChatMessage("[AutoBellows] " + featureName + ": " + (isEnabled ? "ON" : "OFF"));
+            capi?.ShowChatMessage("[AutoBellows] " + featureName + ": " + StateText(isEnabled));
+        }
+
+        private string T(string uk, string en)
+        {
+            return settings.LanguageCode == "uk" ? uk : en;
+        }
+
+        private string StateText(bool isEnabled)
+        {
+            return isEnabled ? T("УВІМК", "ON") : T("ВИМК", "OFF");
+        }
+
+        private string AutoBellowsLabel()
+        {
+            return T("Авто роздув", "Auto Bellows");
+        }
+
+        private string AutoPouringLabel()
+        {
+            return T("Авто заливання", "Auto Pouring");
+        }
+
+        private string IngotMoldsLabel()
+        {
+            return T("Форми для злитків", "Ingot molds");
+        }
+
+        private string ToolMoldsLabel()
+        {
+            return T("Форми для інструментів", "Tool molds");
+        }
+
+        private AutoBellowsSettings LoadSettings(ICoreClientAPI api)
+        {
+            try
+            {
+                AutoBellowsSettings? loaded = api.LoadModConfig<AutoBellowsSettings>(ConfigFileName);
+                if (loaded != null)
+                {
+                    loaded.Normalize();
+                    return loaded;
+                }
+            }
+            catch (Exception ex)
+            {
+                api.Logger.Notification("[AutoBellows] Could not load config: " + ex.Message);
+            }
+
+            AutoBellowsSettings defaults = new AutoBellowsSettings();
+            try
+            {
+                api.StoreModConfig(defaults, ConfigFileName);
+            }
+            catch (Exception ex)
+            {
+                api.Logger.Notification("[AutoBellows] Could not create config: " + ex.Message);
+            }
+
+            return defaults;
+        }
+
+        private void SaveSettings()
+        {
+            if (capi == null)
+            {
+                return;
+            }
+
+            try
+            {
+                capi.StoreModConfig(settings, ConfigFileName);
+            }
+            catch (Exception ex)
+            {
+                capi.Logger.Notification("[AutoBellows] Could not save config: " + ex.Message);
+            }
+        }
+
+        private void SetAllowIngotMolds(bool allow)
+        {
+            if (settings.AllowIngotMolds == allow)
+            {
+                return;
+            }
+
+            settings.AllowIngotMolds = allow;
+            OnPourTargetSettingsChanged(IngotMoldsLabel(), allow);
+        }
+
+        private void SetAllowToolMolds(bool allow)
+        {
+            if (settings.AllowToolMolds == allow)
+            {
+                return;
+            }
+
+            settings.AllowToolMolds = allow;
+            OnPourTargetSettingsChanged(ToolMoldsLabel(), allow);
+        }
+
+        private void OnPourTargetSettingsChanged(string label, bool allow)
+        {
+            SaveSettings();
+            pourTargets.Clear();
+            nextPourScanAtMs = 0;
+            nextPourActionAtMs = 0;
+
+            LogPour("target setting changed: " + label + "=" + allow);
+            capi?.ShowChatMessage("[AutoBellows] " + T("Ціль заливання", "Auto Pouring target") + " " + label + ": " + StateText(allow));
+        }
+
+        private void SetBellowsEnabled(bool value)
+        {
+            if (enabled == value)
+            {
+                return;
+            }
+
+            enabled = value;
+            bellowsPositions.Clear();
+            nextScanAtMs = 0;
+
+            ShowChatStatus(AutoBellowsLabel(), enabled);
+            settingsDialog?.SyncSwitches();
+        }
+
+        private void SetPouringEnabled(bool value)
+        {
+            if (pouringEnabled == value)
+            {
+                return;
+            }
+
+            pouringEnabled = value;
+            pourTargets.Clear();
+            nextPourScanAtMs = 0;
+            nextPourActionAtMs = 0;
+
+            LogPour("Auto Pouring " + (pouringEnabled ? "enabled" : "disabled"));
+            ShowChatStatus(AutoPouringLabel(), pouringEnabled);
+            settingsDialog?.SyncSwitches();
+        }
+
+        private void SetUkrainianLanguage(bool value)
+        {
+            string languageCode = value ? "uk" : "en";
+            if (settings.LanguageCode == languageCode)
+            {
+                return;
+            }
+
+            settings.LanguageCode = languageCode;
+            settings.Normalize();
+            SaveSettings();
+
+            capi?.ShowChatMessage("[AutoBellows] " + T("Мова: Українська", "Language: English"));
+            settingsDialog?.RecomposeDialog();
         }
 
         private Vec3d GetDebugHitPosition(BlockPos targetPos)
@@ -1047,6 +1264,104 @@ namespace AutoBellows
             bellowsPositions.Clear();
             pourTargets.Clear();
             base.Dispose();
+        }
+
+        private sealed class AutoBellowsSettings
+        {
+            public bool AllowIngotMolds { get; set; } = true;
+            public bool AllowToolMolds { get; set; }
+            public string LanguageCode { get; set; } = "uk";
+
+            public void Normalize()
+            {
+                if (LanguageCode != "uk" && LanguageCode != "en")
+                {
+                    LanguageCode = "uk";
+                }
+            }
+        }
+
+        private sealed class AutoBellowsSettingsDialog : GuiDialog
+        {
+            private const string BellowsSwitchKey = "autoBellowsSwitch";
+            private const string PouringSwitchKey = "autoPouringSwitch";
+            private const string IngotSwitchKey = "ingotMoldsSwitch";
+            private const string ToolSwitchKey = "toolMoldsSwitch";
+            private const string LanguageSwitchKey = "languageSwitch";
+
+            private readonly AutoBellowsSystem system;
+
+            public AutoBellowsSettingsDialog(ICoreClientAPI capi, AutoBellowsSystem system) : base(capi)
+            {
+                this.system = system;
+                ComposeDialog();
+            }
+
+            public override string ToggleKeyCombinationCode => SettingsHotkeyCode;
+
+            public override void OnGuiOpened()
+            {
+                base.OnGuiOpened();
+                SyncSwitches();
+            }
+
+            public void RecomposeDialog()
+            {
+                bool wasOpened = IsOpened();
+                if (wasOpened)
+                {
+                    TryClose();
+                }
+
+                ComposeDialog();
+
+                if (wasOpened)
+                {
+                    TryOpen(true);
+                }
+            }
+
+            private void ComposeDialog()
+            {
+                ElementBounds dialogBounds = ElementStdBounds.AutosizedMainDialog;
+                ElementBounds bgBounds = ElementBounds.Fill.WithFixedPadding(GuiStyle.ElementToDialogPadding);
+                bgBounds.BothSizing = ElementSizing.FitToChildren;
+
+                SingleComposer = capi.Gui.CreateCompo("autobellows-settings", dialogBounds)
+                    .AddShadedDialogBG(bgBounds, true, 5, 0.75f)
+                    .AddDialogTitleBar(system.T("Налаштування Auto Bellows", "Auto Bellows Settings"), () => TryClose(), CairoFont.WhiteSmallishText(), ElementStdBounds.TitleBar(), "titlebar")
+                    .BeginChildElements(bgBounds)
+                    .AddStaticText(system.T("Функції", "Features"), CairoFont.WhiteSmallText(), ElementBounds.Fixed(20, 42, 360, 24), "featuresTitle")
+                    .AddStaticText(system.AutoBellowsLabel(), CairoFont.WhiteSmallText(), ElementBounds.Fixed(20, 76, 280, 24), "autoBellowsLabel")
+                    .AddSwitch(system.SetBellowsEnabled, ElementBounds.Fixed(332, 72, 42, 24), BellowsSwitchKey, 20, 4)
+                    .AddStaticText(system.AutoPouringLabel(), CairoFont.WhiteSmallText(), ElementBounds.Fixed(20, 110, 280, 24), "autoPouringLabel")
+                    .AddSwitch(system.SetPouringEnabled, ElementBounds.Fixed(332, 106, 42, 24), PouringSwitchKey, 20, 4)
+                    .AddStaticText(system.T("Цілі заливання", "Auto Pouring targets"), CairoFont.WhiteSmallText(), ElementBounds.Fixed(20, 150, 360, 24), "pourTargetsTitle")
+                    .AddStaticText(system.IngotMoldsLabel(), CairoFont.WhiteSmallText(), ElementBounds.Fixed(20, 184, 280, 24), "ingotMoldsLabel")
+                    .AddSwitch(system.SetAllowIngotMolds, ElementBounds.Fixed(332, 180, 42, 24), IngotSwitchKey, 20, 4)
+                    .AddStaticText(system.ToolMoldsLabel(), CairoFont.WhiteSmallText(), ElementBounds.Fixed(20, 218, 280, 24), "toolMoldsLabel")
+                    .AddSwitch(system.SetAllowToolMolds, ElementBounds.Fixed(332, 214, 42, 24), ToolSwitchKey, 20, 4)
+                    .AddStaticText(system.T("Українська мова", "Ukrainian language"), CairoFont.WhiteSmallText(), ElementBounds.Fixed(20, 258, 280, 24), "languageLabel")
+                    .AddSwitch(system.SetUkrainianLanguage, ElementBounds.Fixed(332, 254, 42, 24), LanguageSwitchKey, 20, 4)
+                    .EndChildElements()
+                    .Compose(true);
+
+                SyncSwitches();
+            }
+
+            public void SyncSwitches()
+            {
+                if (SingleComposer == null)
+                {
+                    return;
+                }
+
+                Vintagestory.API.Client.GuiComposerHelpers.GetSwitch(SingleComposer, BellowsSwitchKey).On = system.enabled;
+                Vintagestory.API.Client.GuiComposerHelpers.GetSwitch(SingleComposer, PouringSwitchKey).On = system.pouringEnabled;
+                Vintagestory.API.Client.GuiComposerHelpers.GetSwitch(SingleComposer, IngotSwitchKey).On = system.settings.AllowIngotMolds;
+                Vintagestory.API.Client.GuiComposerHelpers.GetSwitch(SingleComposer, ToolSwitchKey).On = system.settings.AllowToolMolds;
+                Vintagestory.API.Client.GuiComposerHelpers.GetSwitch(SingleComposer, LanguageSwitchKey).On = system.settings.LanguageCode == "uk";
+            }
         }
 
         private sealed class PourSource
