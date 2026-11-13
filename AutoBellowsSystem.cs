@@ -15,10 +15,6 @@ namespace AutoBellows
         private const string PouringHotkeyCode = "autopouring-toggle";
         private const string SettingsHotkeyCode = "autobellows-settings";
         private const string ConfigFileName = "AutoBellows.json";
-        private const int BellowsScanRadius = 30;
-        private const int BellowsScanRadiusSquared = BellowsScanRadius * BellowsScanRadius;
-        private const int PourScanRadius = 50;
-        private const int PourScanRadiusSquared = PourScanRadius * PourScanRadius;
         private const int PumpIntervalMs = 215;
         private const int ScanIntervalMs = 1000;
         private const int MaxInteractionsPerTick = 256;
@@ -56,7 +52,7 @@ namespace AutoBellows
 
             api.Input.RegisterHotKey(
                 HotkeyCode,
-                "Toggle Auto Bellows",
+                T("Перемкнути авто роздув", "Toggle Auto Bellows"),
                 GlKeys.Z,
                 HotkeyType.GUIOrOtherControls,
                 false,
@@ -67,7 +63,7 @@ namespace AutoBellows
 
             api.Input.RegisterHotKey(
                 PouringHotkeyCode,
-                "Toggle Auto Pouring",
+                T("Перемкнути авто заливання", "Toggle Auto Pouring"),
                 GlKeys.X,
                 HotkeyType.GUIOrOtherControls,
                 false,
@@ -78,7 +74,7 @@ namespace AutoBellows
 
             api.Input.RegisterHotKey(
                 SettingsHotkeyCode,
-                "Auto Bellows Settings",
+                T("Налаштування Auto Bellows", "Auto Bellows Settings"),
                 GlKeys.F1,
                 HotkeyType.GUIOrOtherControls,
                 false,
@@ -131,6 +127,7 @@ namespace AutoBellows
             }
             else
             {
+                settingsDialog.RefreshLanguageIfNeeded();
                 settingsDialog.TryOpen(true);
             }
 
@@ -174,13 +171,13 @@ namespace AutoBellows
             BlockPos playerPos = capi.World.Player.Entity.Pos.AsBlockPos;
             IBlockAccessor blockAccessor = capi.World.BlockAccessor;
 
-            for (int dx = -BellowsScanRadius; dx <= BellowsScanRadius; dx++)
+            for (int dx = -settings.Radius; dx <= settings.Radius; dx++)
             {
-                for (int dy = -BellowsScanRadius; dy <= BellowsScanRadius; dy++)
+                for (int dy = -settings.Radius; dy <= settings.Radius; dy++)
                 {
-                    for (int dz = -BellowsScanRadius; dz <= BellowsScanRadius; dz++)
+                    for (int dz = -settings.Radius; dz <= settings.Radius; dz++)
                     {
-                        if (dx * dx + dy * dy + dz * dz > BellowsScanRadiusSquared)
+                        if (dx * dx + dy * dy + dz * dz > (settings.Radius * settings.Radius))
                         {
                             continue;
                         }
@@ -224,6 +221,7 @@ namespace AutoBellows
                     break;
                 }
 
+                if (!IsWithinConfiguredRadius(pos)) continue;
                 Block block = blockAccessor.GetBlock(pos);
                 if (!IsBellows(block))
                 {
@@ -376,13 +374,13 @@ namespace AutoBellows
             BlockPos playerPos = capi.World.Player.Entity.Pos.AsBlockPos;
             IBlockAccessor blockAccessor = capi.World.BlockAccessor;
 
-            for (int dx = -PourScanRadius; dx <= PourScanRadius; dx++)
+            for (int dx = -settings.Radius; dx <= settings.Radius; dx++)
             {
-                for (int dy = -PourScanRadius; dy <= PourScanRadius; dy++)
+                for (int dy = -settings.Radius; dy <= settings.Radius; dy++)
                 {
-                    for (int dz = -PourScanRadius; dz <= PourScanRadius; dz++)
+                    for (int dz = -settings.Radius; dz <= settings.Radius; dz++)
                     {
-                        if (dx * dx + dy * dy + dz * dz > PourScanRadiusSquared)
+                        if (dx * dx + dy * dy + dz * dz > (settings.Radius * settings.Radius))
                         {
                             continue;
                         }
@@ -644,6 +642,12 @@ namespace AutoBellows
                 return false;
             }
 
+            if (!IsWithinConfiguredRadius(target.Position))
+            {
+                skipReason = "outside configured radius";
+                return false;
+            }
+
             BlockEntity blockEntity = capi.World.BlockAccessor.GetBlockEntity(target.Position);
             if (blockEntity is BlockEntityToolMold toolMold)
             {
@@ -823,13 +827,13 @@ namespace AutoBellows
             BlockPos playerPos = capi.World.Player.Entity.Pos.AsBlockPos;
             IBlockAccessor blockAccessor = capi.World.BlockAccessor;
 
-            for (int dx = -PourScanRadius; dx <= PourScanRadius; dx++)
+            for (int dx = -settings.Radius; dx <= settings.Radius; dx++)
             {
-                for (int dy = -PourScanRadius; dy <= PourScanRadius; dy++)
+                for (int dy = -settings.Radius; dy <= settings.Radius; dy++)
                 {
-                    for (int dz = -PourScanRadius; dz <= PourScanRadius; dz++)
+                    for (int dz = -settings.Radius; dz <= settings.Radius; dz++)
                     {
-                        if (dx * dx + dy * dy + dz * dz > PourScanRadiusSquared)
+                        if (dx * dx + dy * dy + dz * dz > (settings.Radius * settings.Radius))
                         {
                             continue;
                         }
@@ -1064,9 +1068,36 @@ namespace AutoBellows
             capi?.ShowChatMessage("[AutoBellows] " + featureName + ": " + StateText(isEnabled));
         }
 
+        private bool IsUkrainian()
+        {
+            return settings.AutoLanguage ? (Lang.CurrentLocale ?? "").StartsWith("uk", StringComparison.OrdinalIgnoreCase) : settings.LanguageCode == "uk";
+        }
+
         private string T(string uk, string en)
         {
-            return settings.LanguageCode == "uk" ? uk : en;
+            return IsUkrainian() ? uk : en;
+        }
+
+        private bool IsWithinConfiguredRadius(BlockPos pos)
+        {
+            if (capi?.World?.Player?.Entity == null) return false;
+            BlockPos player = capi.World.Player.Entity.Pos.AsBlockPos;
+            long dx = (long)pos.X - player.X, dy = (long)pos.Y - player.Y, dz = (long)pos.Z - player.Z;
+            return player.dimension == pos.dimension && dx * dx + dy * dy + dz * dz <= settings.Radius * settings.Radius;
+        }
+
+        private bool SetRadius(int radius)
+        {
+            radius = Math.Clamp(radius, 1, 30);
+            if (settings.Radius == radius) return true;
+            settings.Radius = radius;
+            bellowsPositions.Clear();
+            pourTargets.Clear();
+            nextScanAtMs = 0;
+            nextPourScanAtMs = 0;
+            nextPourActionAtMs = 0;
+            SaveSettings();
+            return true;
         }
 
         private string StateText(bool isEnabled)
@@ -1205,18 +1236,22 @@ namespace AutoBellows
             settingsDialog?.SyncSwitches();
         }
 
+        private void SetAutoLanguage(bool value)
+        {
+            if (settings.AutoLanguage == value) return;
+            if (!value) settings.LanguageCode = IsUkrainian() ? "uk" : "en";
+            settings.AutoLanguage = value;
+            SaveSettings();
+            settingsDialog?.RecomposeDialog();
+        }
+
         private void SetUkrainianLanguage(bool value)
         {
             string languageCode = value ? "uk" : "en";
-            if (settings.LanguageCode == languageCode)
-            {
-                return;
-            }
-
+            if (!settings.AutoLanguage && settings.LanguageCode == languageCode) return;
             settings.LanguageCode = languageCode;
-            settings.Normalize();
+            settings.AutoLanguage = false;
             SaveSettings();
-
             capi?.ShowChatMessage("[AutoBellows] " + T("Мова: Українська", "Language: English"));
             settingsDialog?.RecomposeDialog();
         }
@@ -1271,9 +1306,12 @@ namespace AutoBellows
             public bool AllowIngotMolds { get; set; } = true;
             public bool AllowToolMolds { get; set; }
             public string LanguageCode { get; set; } = "uk";
+            public bool AutoLanguage { get; set; } = true;
+            public int Radius { get; set; } = 30;
 
             public void Normalize()
             {
+                Radius = Math.Clamp(Radius, 1, 30);
                 if (LanguageCode != "uk" && LanguageCode != "en")
                 {
                     LanguageCode = "uk";
@@ -1288,8 +1326,11 @@ namespace AutoBellows
             private const string IngotSwitchKey = "ingotMoldsSwitch";
             private const string ToolSwitchKey = "toolMoldsSwitch";
             private const string LanguageSwitchKey = "languageSwitch";
+            private const string AutoLanguageSwitchKey = "autoLanguageSwitch";
+            private const string RadiusSliderKey = "radiusSlider";
 
             private readonly AutoBellowsSystem system;
+            private bool composedUkrainian;
 
             public AutoBellowsSettingsDialog(ICoreClientAPI capi, AutoBellowsSystem system) : base(capi)
             {
@@ -1303,6 +1344,11 @@ namespace AutoBellows
             {
                 base.OnGuiOpened();
                 SyncSwitches();
+            }
+
+            public void RefreshLanguageIfNeeded()
+            {
+                if (composedUkrainian != system.IsUkrainian()) ComposeDialog();
             }
 
             public void RecomposeDialog()
@@ -1323,6 +1369,8 @@ namespace AutoBellows
 
             private void ComposeDialog()
             {
+                ClearComposers();
+                composedUkrainian = system.IsUkrainian();
                 ElementBounds dialogBounds = ElementStdBounds.AutosizedMainDialog;
                 ElementBounds bgBounds = ElementBounds.Fill.WithFixedPadding(GuiStyle.ElementToDialogPadding);
                 bgBounds.BothSizing = ElementSizing.FitToChildren;
@@ -1341,11 +1389,16 @@ namespace AutoBellows
                     .AddSwitch(system.SetAllowIngotMolds, ElementBounds.Fixed(332, 180, 42, 24), IngotSwitchKey, 20, 4)
                     .AddStaticText(system.ToolMoldsLabel(), CairoFont.WhiteSmallText(), ElementBounds.Fixed(20, 218, 280, 24), "toolMoldsLabel")
                     .AddSwitch(system.SetAllowToolMolds, ElementBounds.Fixed(332, 214, 42, 24), ToolSwitchKey, 20, 4)
-                    .AddStaticText(system.T("Українська мова", "Ukrainian language"), CairoFont.WhiteSmallText(), ElementBounds.Fixed(20, 258, 280, 24), "languageLabel")
-                    .AddSwitch(system.SetUkrainianLanguage, ElementBounds.Fixed(332, 254, 42, 24), LanguageSwitchKey, 20, 4)
+                    .AddStaticText(system.T("Автоматична мова", "Automatic language"), CairoFont.WhiteSmallText(), ElementBounds.Fixed(20, 258, 280, 24), "autoLanguageLabel")
+                    .AddSwitch(system.SetAutoLanguage, ElementBounds.Fixed(332, 254, 42, 24), AutoLanguageSwitchKey, 20, 4)
+                    .AddStaticText(system.T("Українська мова (вручну)", "Ukrainian language (manual)"), CairoFont.WhiteSmallText(), ElementBounds.Fixed(20, 292, 280, 24), "languageLabel")
+                    .AddSwitch(system.SetUkrainianLanguage, ElementBounds.Fixed(332, 288, 42, 24), LanguageSwitchKey, 20, 4)
+                    .AddStaticText(system.T("Радіус дії (блоки)", "Action radius (blocks)"), CairoFont.WhiteSmallText(), ElementBounds.Fixed(20, 330, 340, 24), "radiusLabel")
+                    .AddSlider(system.SetRadius, ElementBounds.Fixed(20, 360, 354, 30), RadiusSliderKey)
                     .EndChildElements()
                     .Compose(true);
 
+                SingleComposer.GetSlider(RadiusSliderKey).SetValues(system.settings.Radius, 1, 30, 1);
                 SyncSwitches();
             }
 
@@ -1360,7 +1413,8 @@ namespace AutoBellows
                 Vintagestory.API.Client.GuiComposerHelpers.GetSwitch(SingleComposer, PouringSwitchKey).On = system.pouringEnabled;
                 Vintagestory.API.Client.GuiComposerHelpers.GetSwitch(SingleComposer, IngotSwitchKey).On = system.settings.AllowIngotMolds;
                 Vintagestory.API.Client.GuiComposerHelpers.GetSwitch(SingleComposer, ToolSwitchKey).On = system.settings.AllowToolMolds;
-                Vintagestory.API.Client.GuiComposerHelpers.GetSwitch(SingleComposer, LanguageSwitchKey).On = system.settings.LanguageCode == "uk";
+                Vintagestory.API.Client.GuiComposerHelpers.GetSwitch(SingleComposer, AutoLanguageSwitchKey).On = system.settings.AutoLanguage;
+                Vintagestory.API.Client.GuiComposerHelpers.GetSwitch(SingleComposer, LanguageSwitchKey).On = system.IsUkrainian();
             }
         }
 

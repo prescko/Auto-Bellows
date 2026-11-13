@@ -12,15 +12,15 @@
 
   <ItemGroup>
     <Reference Include="VintagestoryAPI">
-      <HintPath>D:\Vintagestory\VintagestoryAPI.dll</HintPath>
+      <HintPath>$(VINTAGE_STORY)/VintagestoryAPI.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="VintagestoryLib">
-      <HintPath>D:\Vintagestory\VintagestoryLib.dll</HintPath>
+      <HintPath>$(VINTAGE_STORY)/VintagestoryLib.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="VSSurvivalMod">
-      <HintPath>D:\Vintagestory\Mods\VSSurvivalMod.dll</HintPath>
+      <HintPath>$(VINTAGE_STORY)/Mods/VSSurvivalMod.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
@@ -29,6 +29,7 @@
     <MakeDir Directories="$(ProjectDir)bin\Package" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ProjectDir)bin\Package" />
     <Copy SourceFiles="$(ProjectDir)modinfo.json" DestinationFolder="$(ProjectDir)bin\Package" />
+    <Copy SourceFiles="$(ProjectDir)LICENSE.md;$(ProjectDir)modicon.png" DestinationFolder="$(ProjectDir)bin\Package" />
     <ZipDirectory SourceDirectory="$(ProjectDir)bin\Package" DestinationFile="$(ProjectDir)bin\AutoBellows.zip" Overwrite="true" />
   </Target>
 </Project>
