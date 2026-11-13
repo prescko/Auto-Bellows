@@ -1,6 +1,3 @@
-Ось оновлений текст для головної сторінки `README.md`:
-
-```markdown
 # Auto Bellows
 
 <p align="center">
@@ -79,4 +76,3 @@ See the [LICENSE](LICENSE.md) file for details.
 <p align="center">
   Made by <b>prescko</b>
 </p>
-```
